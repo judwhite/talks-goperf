@@ -1,0 +1,97 @@
+* Misc notes: ASM/Cgo
+
+- [[https://golang.org/doc/asm]]
+- [[http://goroutines.com/asm]]
+
+Cgo - call C functions from Go:
+
+- Per call overhead ~150ns. or use gccgo, but generated go code by gccgo may not be as good as the native compiler.
+- This is changing all the time.
+
+- [[http://jmoiron.net/blog/go-performance-tales]] (old'ish)
+
+* Misc notes: Memory
+
+memprofile
+
+- default, what's held onto now
+- -alloc_objects, what's doing allocs
+- go tool pprof -alloc_objects (binary) (pprof output)
+
+mallocgc is the function which allocates memory in Go
+
+- if it shows up too often it's time to see why you're allocating
+
+* Misc notes: Strings
+
+- HasPrefix - just check it if it's a single char.
+- Split, Trim, regexp
+- table optimization (character -> int output)
+- Don't read a string if you don't have to, use the bytes. allocs to do conversions, runes for utf8.
+- don't use + concatenation, bytes.Buffer WriteString
+- runtime.convT2E - convert type to empty interface, seen in disasm
+- strings won't fit in the 2 word space for an empty interface
+
+* Misc notes: Pools, profiling
+
+sync.Pool:
+
+- bytes.ByteBuffer
+
+Contention profiling:
+
+- go test -bench=. -blockprofile=prof.block
+
+Reading a file:
+
+- bufio.NewReader, writing: bytes.Buffer
+
+syscalls:
+
+- os.hostname
+
+defer has a cost
+
+go tool pprof -seconds 5 http://localhost:9090/debug/pprof/profile
+
+sync/atomic - 100's of cores (256 cores) synchronization takes time.
+
+go-torch -u http://localhost:9090 --time 5
+go-torch --binary-name foo.test.exe -b cpu.out
+go test -run=none -bench . -benchmem -cpuprofile cpu.out -memprofile prof.mem
+branch prediction
+locality
+
+pprof, can filter graph to calls which took more than x% of time
+
+profiling has to run long enough, it does sample (once per 100 cycles??)
+
+"free lists" vs sync.Pool
+
+https://github.com/cloudflare/golibs
+- bytepool
+- lrucache
+- circularbuffer
+
+https://github.com/facebookgo
+
+benchstat
+
+Slow leaks, in prod:
+import _ "net/http/pprof"
+cpu, memory, contention
+
+regexp has free lists + mutex
+
+Prometheus - visualization for instrumentation
+
+gcflags = not "garbage collector", "go compiler flags"
+
+Memory alignment - avoid wasted bytes for padding)
+
+defer without "func()" evaluates closures immediate; if ptr reassigned it retains the old pointer value
+
+http://blog.rocana.com/golang-escape-analysis
+
+Go Escape Analysis Flaws Dmitry Vyukov, @dvyukov Feb 10, 2015
+https://docs.google.com/document/d/1CxgUBPlx9iJzkz9JWkb6tIpTe5q32QDmz8l0BouG0Cw/preview

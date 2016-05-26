@@ -1,0 +1,453 @@
+Performance Tuning in Go
+26 May 2016
+
+Jud White
+@judson_white
+https://github.com/judwhite
+
+* Slides Available
+
+- [[https://github.com/judwhite/talk-goperf]]
+
+.image images/gopher_bbq.png 450 _
+
+.caption _The_Go_gopher_was_designed_by_Renée_French_
+
+* This Talk
+
+- Benchmarking
+- Profiling
+- Visualization Tools
+- Optimization Techniques
+
+* Questions?
+
+* Tools
+
+Standard:
+
+  go test / go test -bench
+  go tool pprof
+
+Extras:
+
+  go get -u golang.org/x/tools/cmd/benchcmp
+  go get -u github.com/ajstarks/svgo/benchviz
+  go get -u github.com/uber/go-torch
+
+Visualization:
+
+- Graphviz - [[http://graphviz.org]] (for pprof web/svg, benchviz)
+- FlameGraph - [[https://github.com/brendangregg/FlameGraph]] (for go-torch)
+
+* Platform Notes
+
+Windows:
+
+- ActivePerl - [[http://www.activestate.com/activeperl/downloads]] (if using go-torch / FlameGraph)
+- [[https://cygwin.com/install.html][Cygwin]] or [[http://www.mingw.org/][MinGW]] (some scripts use awk)
+
+OSX:
+
+- 10.11 or greater
+
+VMs:
+
+- Usually have counters turned off, won't work for benchmarking
+- VMware: "Enable code profiling applications in this virtual machine"
+
+Make sure tools are in PATH (Perl, Graphviz, FlameGraph scripts).
+
+* Testing
+
+- Slow code is usually better than wrong code
+
+* Parse a list of comma separate integers using Regex
+
+ var parseRegexp *regexp.Regexp = regexp.MustCompile(`\s*(,|$)\s*`)
+ 
+ func parseCSV(s string) ([]int, error) {
+ 	var list []int
+ 	matches := parseRegexp.Split(s, -1)
+ 	for _, match := range matches {
+ 		if match == "" {
+ 			continue
+ 		}
+ 		num, err := strconv.Atoi(match)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 		list = append(list, num)
+ 	}
+ 	return list, nil
+ }
+
+* Parse a list of comma separate integers - Test (1/2)
+
+ import "testing"
+ 
+ func TestParseCSV(t *testing.T) {
+ 	testData := []struct {
+ 		input  string
+ 		output []int
+ 	}{
+ 		{"1,2,3,4,5", []int{1, 2, 3, 4, 5}},
+ 		{"1, 2, 3, 4, 5", []int{1, 2, 3, 4, 5}},
+ 		{"1,2, 3 ,4,5,", []int{1, 2, 3, 4, 5}},
+ 	}
+ 
+ 	for _, test := range testData {
+ 		testParseCSV(t, test.input, test.output)
+ 	}
+ }
+
+* Parse a list of comma separate integers - Test (2/2) 
+
+ func testParseCSV(t testing.TB, input string, expected []int) {
+ 	output, err := parseCSV(input)
+ 	if err != nil {
+ 		t.Fatalf("input: %q\n\t%v", input, err)
+ 	}
+ 	if len(expected) != len(output) {
+ 		t.Fatalf("input: %q\n\texp: %v\n\tact: %v", input, expected, output)
+ 	}
+ 	for i := 0; i < len(expected); i++ {
+ 		if expected[i] != output[i] {
+ 			t.Fatalf("input: %q\n\texp[%d]: %v\n\tact[%d]: %v", input, i, expected[i], i, output[i])
+ 		}
+ 	}
+ }
+
+- *testing.T and *testing.B satisfy the testing.TB interface
+- Reuse code between tests and benchmarks
+
+* Code coverage
+
+  go test -cover -coverprofile=cover.out
+
+  PASS
+  coverage: 64.3% of statements
+  ok      github.com/judwhite/talk-goperf/01-parsecsv-regex       0.599s
+ 
+  go tool cover -func=cover.out
+
+  github.com\judwhite\talk-goperf\01-parsecsv-regex\main.go:12:   main            0.0%
+  github.com\judwhite\talk-goperf\01-parsecsv-regex\main.go:20:   parseCSV        90.0%
+  total:                                                          (statements)    64.3%
+
+* Code coverage - HTML
+
+ go tool cover -html=cover.out
+
+.image images/coverage.png 320 _
+
+* Parse a list of comma separate integers - Benchmark
+
+ var input string = "1,2,3,4,5"
+ var expected []int = []int{1, 2, 3, 4, 5}
+
+ func BenchmarkParseCSV(b *testing.B) {
+ 	for i := 0; i < b.N; i++ {
+ 		testParseCSV(b, input, expected)
+ 	}
+ }
+ 
+ func BenchmarkParseCSVParallel(b *testing.B) {
+ 	b.RunParallel(func(pb *testing.PB) {
+ 		for pb.Next() {
+ 			testParseCSV(b, input, expected)
+ 		}
+ 	})
+ }
+
+* *testing.B Methods
+
+ b.RunParallel(func(pb *testing.PB))
+
+- Parallel calls to test function.
+
+ b.ReportAllocs()
+
+- Same as -benchmem from command line.
+
+ b.SetBytes(int64)
+
+- Measure throughput. Example: encoding/decoding, protocols.
+
+ b.{Start,Stop,Reset}Timer()
+
+- Good for timing, not for profiling.
+
+* Running the benchmark
+
+ go test -run none -bench . -benchmem -cpuprofile cpu.pprof -memprofile mem.pprof
+
+ BenchmarkParseCSV-8            300000       4237 ns/op      632 B/op    12 allocs/op
+ BenchmarkParseCSVParallel-8    500000       3140 ns/op      632 B/op    12 allocs/op
+
+* pprof
+
+ go test -run none -bench BenchmarkParseCSV$ -benchmem -cpuprofile cpu.pprof -memprofile mem.pprof
+ go tool pprof 01-parsecsv-regex.test.exe cpu.pprof
+
+ (pprof) top20 -cum
+ 0.84s of 1.51s total (55.63%)
+ Showing top 20 nodes out of 75 (cum >= 0.11s)
+       flat  flat%   sum%        cum   cum%
+          0     0%     0%      1.24s 82.12%  runtime.goexit
+          0     0%     0%      1.22s 80.79%  01-parsecsv-regex.BenchmarkParseCSV
+      0.01s  0.66%  0.66%      1.22s 80.79%  01-parsecsv-regex.testParseCSV
+          0     0%  0.66%      1.22s 80.79%  testing.(*B).launch
+          0     0%  0.66%      1.22s 80.79%  testing.(*B).runN
+      0.02s  1.32%  1.99%      1.21s 80.13%  01-parsecsv-regex.parseCSV
+      0.01s  0.66%  2.65%      1.08s 71.52%  regexp.(*Regexp).Split
+          0     0%  2.65%      1.04s 68.87%  regexp.(*Regexp).FindAllStringIndex
+      0.02s  1.32%  3.97%         1s 66.23%  regexp.(*Regexp).allMatches
+      0.05s  3.31%  7.28%      0.97s 64.24%  regexp.(*Regexp).doExecute
+          0     0%  7.28%      0.78s 51.66%  regexp.(*machine).backtrack
+      0.52s 34.44% 41.72%      0.77s 50.99%  regexp.(*machine).tryBacktrack
+          0     0% 41.72%      0.15s  9.93%  runtime.schedule
+      0.01s  0.66% 42.38%      0.13s  8.61%  runtime.findrunnable
+          0     0% 42.38%      0.13s  8.61%  runtime.mcall
+          0     0% 42.38%      0.13s  8.61%  runtime.park_m
+      0.03s  1.99% 44.37%      0.12s  7.95%  runtime.makeslice
+
+* pprof web
+
+ (pprof) web
+
+.image images/01-cpu-profile.png 450 _
+
+[[images/pprof001.svg]]
+
+* go-torch
+
+ go-torch /binaryinput:cpu.pprof /binaryname:01-parsecsv-regex.test.exe
+
+.image images/01-flamegraph.png 200 _
+
+.image images/01-flamegraph-zoom.png 200 _
+
+[[images/torch01.svg]]
+
+* Let's get rid of the Regex - strings.Split
+
+ func parseCSV(s string) ([]int, error) {
+ 	var list []int
+ 	matches := strings.Split(s, ",")
+ 	for _, match := range matches {
+ 		if match == "" {
+ 			continue
+ 		}
+ 		match = strings.TrimSpace(match)
+ 		num, err := strconv.Atoi(match)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 		list = append(list, num)
+ 	}
+ 	return list, nil
+ }
+
+* Compare results
+
+ go test -run none -bench . -benchmem -cpuprofile cpu.pprof -memprofile mem.pprof
+
+Regex:
+
+ BenchmarkParseCSV-8            300000       4237 ns/op      632 B/op    12 allocs/op
+ BenchmarkParseCSVParallel-8    500000       3140 ns/op      632 B/op    12 allocs/op
+
+strings.Split:
+
+ BenchmarkParseCSV-8           2000000        873 ns/op      200 B/op     5 allocs/op
+ BenchmarkParseCSVParallel-8   5000000        391 ns/op      200 B/op     5 allocs/op
+
+* Compare results - benchcmp
+ 
+ go test -run none -bench . -benchmem > old
+ go test -run none -bench . -benchmem > new
+ 
+ benchcmp ..\01-parsecsv-regex\old new
+
+benchcmp:
+ 
+ benchmark                       old ns/op     new ns/op     delta
+ BenchmarkParseCSV-8             4273          852           -80.06%
+ BenchmarkParseCSVParallel-8     3258          390           -88.03%
+ 
+ benchmark                       old allocs     new allocs     delta
+ BenchmarkParseCSV-8             12             5              -58.33%
+ BenchmarkParseCSVParallel-8     12             5              -58.33%
+ 
+ benchmark                       old bytes     new bytes     delta
+ BenchmarkParseCSV-8             632           200           -68.35%
+ BenchmarkParseCSVParallel-8     632           200           -68.35%
+
+* Compare results - benchviz
+
+ benchcmp ..\01-parsecsv-regex\old new | benchviz > bench.svg
+
+.image images/benchviz01.svg 350 _
+
+* Parse CSV - strings.Split Flame Graph
+
+ go-torch /binaryinput:cpu.pprof /binaryname:02-parsecsv-stringsplit.test.exe
+
+.image images/02-flamegraph.png 240 _
+
+[[images/torch02.svg]]
+
+* Memory allocation and string manipulation
+
+- runtime.growslice
+- strconv.Atoi
+- strings.Split
+- strings.TrimSpace
+
+* Parse a list of comma separate integers - Hand rolled
+
+ func parseCSV(s string) ([]int, error) {
+ 	list := make([]int, 0, len(s)/2+1)
+ 
+ 	inDigit := false
+ 	num := 0
+ 	for _, c := range s {
+ 		if c >= '0' && c <= '9' {
+ 			inDigit = true
+ 			num = num*10 + int(c-'0')
+ 		} else {
+ 			if inDigit {
+ 				list = append(list, num)
+ 				num = 0
+ 				inDigit = false
+ 			}
+ 		}
+ 	}
+ 
+ 	if inDigit {
+ 		list = append(list, num)
+ 	}
+ 
+ 	return list, nil
+ }
+
+* Compare
+
+Regex:
+
+ BenchmarkParseCSV-8            300000       4237 ns/op      632 B/op    12 allocs/op
+ BenchmarkParseCSVParallel-8    500000       3140 ns/op      632 B/op    12 allocs/op
+
+strings.Split:
+
+ BenchmarkParseCSV-8           2000000        873 ns/op      200 B/op     5 allocs/op
+ BenchmarkParseCSVParallel-8   5000000        391 ns/op      200 B/op     5 allocs/op
+
+Hand rolled:
+
+ BenchmarkParseCSV-8          10000000        153 ns/op       48 B/op     1 allocs/op
+ BenchmarkParseCSVParallel-8  20000000         73.0 ns/op     48 B/op     1 allocs/op
+
+* Parse CSV - Hand Rolled Flame Graph
+
+.image images/03-flamegraph.png 210 _
+
+* pprof - list
+
+ (pprof) list parseCSV
+
+     340ms      1.26s (flat, cum) 64.62% of Total
+      10ms       10ms     16:func parseCSV(s string) ([]int, error) {
+      20ms      610ms     17:   list := make([]int, 0, len(s)/2+1)
+         .          .     18:
+         .          .     19:   inDigit := false
+         .          .     20:   num := 0
+     190ms      520ms     21:   for _, c := range s {
+      10ms       10ms     22:           if c >= '0' && c <= '9' {
+      10ms       10ms     23:                   inDigit = true
+      20ms       20ms     24:                   num = num*10 + int(c-'0')
+         .          .     25:           } else {
+         .          .     26:                   if inDigit {
+      50ms       50ms     27:                           list = append(list, num)
+         .          .     28:                           num = 0
+         .          .     29:                           inDigit = false
+         .          .     30:                   }
+         .          .     31:           }
+         .          .     32:   }
+         .          .     33:
+         .          .     34:   if inDigit {
+      10ms       10ms     35:           list = append(list, num)
+         .          .     36:   }
+
+* pprof - disasm
+
+ (pprof) disasm parseCSV
+
+      10ms       10ms     481cf1: MOVQ BX, 0x10(SP)
+         .      590ms     481cf6: CALL runtime.makeslice(SB)
+         .          .     481cfb: MOVQ 0x18(SP), BX
+         .          .     481d00: MOVQ BX, 0x70(SP)
+         .          .     481d05: MOVQ 0x20(SP), BX
+         .          .     481d0a: MOVQ BX, 0x78(SP)
+         .          .     481d0f: MOVQ 0x28(SP), BX
+         .          .     481d14: MOVQ BX, 0x80(SP)
+         .          .     481d1c: MOVL $0x0, 0x47(SP)
+         .          .     481d21: MOVQ $0x0, 0x48(SP)
+         .          .     481d2a: MOVQ 0x90(SP), BX
+         .          .     481d32: MOVQ BX, 0x60(SP)
+         .          .     481d37: MOVQ 0x98(SP), BX
+         .          .     481d3f: MOVQ BX, 0x68(SP)
+         .          .     481d44: XORL SI, SI
+         .          .     481d46: MOVQ SI, 0x50(SP)
+         .          .     481d4b: MOVQ 0x60(SP), BX
+      20ms       20ms     481d50: MOVQ BX, 0(SP)
+         .          .     481d54: MOVQ 0x68(SP), BX
+         .          .     481d59: MOVQ BX, 0x8(SP)
+      10ms       10ms     481d5e: MOVQ SI, 0x10(SP)
+      20ms      350ms     481d63: CALL runtime.stringiter2(SB)
+
+* OK...
+
+- We're at 153 ns/op
+- ... down from 873 ns/op using strings.Split
+- ... down from 4237 ns/op using Regex
+
+Is it time to stop?
+ 
+
+* Benchmarking
+
+- Write tests
+- Start simple
+- Measure everything
+- Profile
+
+- Copy pointers can be faster than copying memory
+
+benchstat
+
+* Posts
+
+- [[https://blog.golang.org/profiling-go-programs]]
+- [[http://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go]]
+- [[http://mindchunk.blogspot.com/2013/05/visualizing-go-benchmarks-with-benchviz.html]]
+- [[https://github.com/ardanlabs/gotraining/blob/master/courses/ultimate/tooling/README.md]]
+- [[https://blog.cloudflare.com/recycling-memory-buffers-in-go/]]
+- [[http://uber.github.io/gotorch/]]
+
+* Videos
+
+- [[https://www.youtube.com/watch?v=JkgQJrodSpI][Optimizing Go programming language with Ashish Gandhi, systems engineer from CloudFlare]] - 18m
+- [[https://www.youtube.com/watch?v=xxDZuPEgbBU][Profiling & Optimizing in Go / Brad Fitzpatrick]] - 1h
+- [[https://www.youtube.com/watch?v=ZuQcbqYK0BY][How to optimize Go for really high performance by Björn Rabenstein of Soundcloud / Prometheus]] - 1h10m
+- [[https://www.youtube.com/watch?v=N3PWzBeLX2M][Profiling and Optimizing Go - Prashant Varanasi - Uber (go-torch)]] - 42m
+
+* Package documentation
+
+- [[https://golang.org/pkg/net/http/pprof/]]
+- [[https://golang.org/pkg/runtime/pprof/]]
+- [[https://golang.org/pkg/runtime/trace/]]
+- [[https://github.com/pkg/profile]]
+- [[https://godoc.org/github.com/pkg/profile]]
+- [[https://github.com/e-dard/netbug]]

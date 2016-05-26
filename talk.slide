@@ -1,4 +1,4 @@
-Performance Tuning in Go
+Performance Profiling in Go
 26 May 2016
 
 Jud White
@@ -7,7 +7,7 @@ https://github.com/judwhite
 
 * Slides Available
 
-- [[https://github.com/judwhite/talk-goperf]]
+- [[https://github.com/judwhite/talks-goperf]]
 
 .image images/gopher_bbq.png 450 _
 
@@ -290,6 +290,10 @@ benchcmp:
 
 .image images/benchviz01.svg 350 _
 
+* Real world benchviz
+
+.image images/benchviz-complete.png 575 _
+
 * Parse CSV - strings.Split Flame Graph
 
  go-torch /binaryinput:cpu.pprof /binaryname:02-parsecsv-stringsplit.test.exe
@@ -407,14 +411,22 @@ Hand rolled:
       10ms       10ms     481d5e: MOVQ SI, 0x10(SP)
       20ms      350ms     481d63: CALL runtime.stringiter2(SB)
 
-* OK...
+* Wait a sec...
 
-- We're at 153 ns/op
-- ... down from 873 ns/op using strings.Split
-- ... down from 4237 ns/op using Regex
+Regex:
 
-Is it time to stop?
- 
+ BenchmarkParseCSV-8            300000       4237 ns/op      632 B/op    12 allocs/op
+ BenchmarkParseCSVParallel-8    500000       3140 ns/op      632 B/op    12 allocs/op
+
+strings.Split:
+
+ BenchmarkParseCSV-8           2000000        873 ns/op      200 B/op     5 allocs/op
+ BenchmarkParseCSVParallel-8   5000000        391 ns/op      200 B/op     5 allocs/op
+
+Hand rolled:
+
+ BenchmarkParseCSV-8          10000000        153 ns/op       48 B/op     1 allocs/op
+ BenchmarkParseCSVParallel-8  20000000         73.0 ns/op     48 B/op     1 allocs/op
 
 * Benchmarking
 
@@ -422,8 +434,6 @@ Is it time to stop?
 - Start simple
 - Measure everything
 - Profile
-
-- Copy pointers can be faster than copying memory
 
 benchstat
 

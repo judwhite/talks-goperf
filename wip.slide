@@ -95,3 +95,5 @@ http://blog.rocana.com/golang-escape-analysis
 
 Go Escape Analysis Flaws Dmitry Vyukov, @dvyukov Feb 10, 2015
 https://docs.google.com/document/d/1CxgUBPlx9iJzkz9JWkb6tIpTe5q32QDmz8l0BouG0Cw/preview
+
+http://www.florinpatan.ro/2016/05/visualizing-profiling-in-go-different.html

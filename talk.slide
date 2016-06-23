@@ -20,8 +20,6 @@ https://github.com/judwhite
 - Visualization Tools
 - Optimization Techniques
 
-* Questions?
-
 * Tools
 
 Standard:
@@ -435,8 +433,6 @@ Hand rolled:
 - Measure everything
 - Profile
 
-benchstat
-
 * Posts
 
 - [[https://blog.golang.org/profiling-go-programs]]
@@ -445,6 +441,7 @@ benchstat
 - [[https://github.com/ardanlabs/gotraining/blob/master/courses/ultimate/tooling/README.md]]
 - [[https://blog.cloudflare.com/recycling-memory-buffers-in-go/]]
 - [[http://uber.github.io/gotorch/]]
+- [[https://medium.com/google-cloud/go-tooling-in-action-eca6882ff3bc]]
 
 * Videos
 
@@ -452,6 +449,7 @@ benchstat
 - [[https://www.youtube.com/watch?v=xxDZuPEgbBU][Profiling & Optimizing in Go / Brad Fitzpatrick]] - 1h
 - [[https://www.youtube.com/watch?v=ZuQcbqYK0BY][How to optimize Go for really high performance by Björn Rabenstein of Soundcloud / Prometheus]] - 1h10m
 - [[https://www.youtube.com/watch?v=N3PWzBeLX2M][Profiling and Optimizing Go - Prashant Varanasi - Uber (go-torch)]] - 42m
+- [[https://www.youtube.com/watch?v=uBjoTxosSys][Go Tooling in Action - Francesc Campoy]] - 42m
 
 * Package documentation
 
